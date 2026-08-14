@@ -1,6 +1,265 @@
-{% extends "base.html" %}
-{% block title %}Home{% endblock %}
-{% block content %}
-<h1>Welcome</h1>
-<p>Use the nav to go to authentication, credits or cashbook.</p>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Petty Cash Ledger</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="page">
+    <nav class="navbar">
+      <a href="/" class="navbrand">📒 Petty Cash Ledger</a>
+      <div class="navlinks">
+        <div class="page-toggle">
+          <a href="/" class="toggle-opt active">Cashbook</a>
+          <a href="/credit" class="toggle-opt">Credit</a>
+        </div>
+        <span class="navuser">{{ user.email if user else "" }}</span>
+        <a href="/logout" class="logout">Logout</a>
+      </div>
+    </nav>
+    <header class="topbar">
+      <h1>Petty Cash Ledger</h1>
+      <div class="date-nav">
+        <button id="prevDay" title="Previous day">◀</button>
+        <button id="todayBtn">Today</button>
+        <button id="nextDay" title="Next day">▶</button>
+        <input type="date" id="datePicker" />
+      </div>
+      <p class="date" id="dateLabel">{{ summary.date }}</p>
+      <p class="locknote" id="lockNote"></p>
+    </header>
+
+    <section class="totals">
+      <div class="card card-green">
+        <span class="label">Received Total</span>
+        <span class="value" id="recTotal">₹ {{ "%.2f"|format(summary.received_total) }}</span>
+      </div>
+      <div class="card card-red">
+        <span class="label">Paid Total</span>
+        <span class="value" id="paidTotal">₹ {{ "%.2f"|format(summary.paid_total) }}</span>
+      </div>
+      <div class="card card-ink">
+        <span class="label">Opening Purant</span>
+        <span class="value" id="opening">₹ {{ "%.2f"|format(summary.opening) }}</span>
+      </div>
+      <div class="card card-blue">
+        <span class="label">Closing Purant</span>
+        <span class="value" id="closing">
+          {% if summary.closing is not none %}₹ {{ "%.2f"|format(summary.closing) }}{% else %}—{% endif %}
+        </span>
+      </div>
+    </section>
+
+    <section class="columns">
+      <div class="panel">
+        <h2>Received</h2>
+        <ul class="entries" id="recList"></ul>
+        <div class="panel-total"><span>Total</span><span id="recPanelTotal">₹ 0.00</span></div>
+        <form class="add-form" id="recForm" data-side="R">
+          <input type="text" name="description" placeholder="Description" required />
+          <input type="number" name="amount" step="0.01" min="0" placeholder="₹" required />
+          <button type="submit">+ Add</button>
+        </form>
+      </div>
+
+      <div class="panel">
+        <h2>Paid</h2>
+        <ul class="entries" id="paidList"></ul>
+        <div class="panel-total"><span>Total</span><span id="paidPanelTotal">₹ 0.00</span></div>
+        <form class="add-form" id="paidForm" data-side="P">
+          <input type="text" name="description" placeholder="Description" required />
+          <input type="number" name="amount" step="0.01" min="0" placeholder="₹" required />
+          <button type="submit">+ Add</button>
+        </form>
+      </div>
+    </section>
+
+    <section class="closing-row">
+      <form id="closingForm">
+        <label>Set Closing Purant (₹):</label>
+        <input type="number" id="closingAmount" step="0.01" min="0" placeholder="0.00" />
+        <button type="submit">Save Closing</button>
+      </form>
+    </section>
+
+    <section class="audit">
+      <h2>Audit Log (recent changes)</h2>
+      <button id="toggleAudit">Show / Hide</button>
+      <table id="auditTable">
+        <thead>
+          <tr><th>Time</th><th>Action</th><th>Date</th><th>Side</th><th>Description</th><th>Amount</th><th>Old Desc</th><th>Old Amt</th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </section>
+
+    <footer class="status">
+      <span id="statusMsg">Ready</span>
+      <a class="refresh" href="/">↻ Refresh</a>
+    </footer>
+  </main>
+
+  <script>
+    const today = "{{ summary.date }}";
+    let currentDate = today;
+    let isToday = {{ "true" if summary.is_today else "false" }};
+
+    const $ = (id) => document.getElementById(id);
+
+    function fmt(n) { return "₹ " + Number(n).toLocaleString("en-IN", {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+
+    function setStatus(msg) { $("statusMsg").textContent = msg; }
+
+    async function loadSummary(d) {
+      const res = await fetch("/api/summary?date=" + encodeURIComponent(d));
+      const s = await res.json();
+      currentDate = s.date;
+      isToday = s.is_today;
+      $("dateLabel").textContent = s.date;
+      $("lockNote").textContent = isToday ? "" : "🔒 Past date — view only (editing locked)";
+      $("opening").textContent = fmt(s.opening);
+      $("closing").textContent = s.closing === null ? "—" : fmt(s.closing);
+      $("recTotal").textContent = fmt(s.received_total);
+      $("paidTotal").textContent = fmt(s.paid_total);
+      $("recPanelTotal").textContent = fmt(s.received_total);
+      $("paidPanelTotal").textContent = fmt(s.paid_total);
+      renderList("recList", s.received, "R");
+      renderList("paidList", s.paid, "P");
+      $("closingAmount").value = s.closing === null ? "" : s.closing;
+      $("datePicker").value = s.date;
+      // disable add forms when not today
+      document.querySelectorAll(".add-form button, #closingForm button").forEach(b => b.disabled = !isToday);
+    }
+
+    function renderList(listId, items, side) {
+      const ul = $(listId);
+      ul.innerHTML = "";
+      if (!items.length) {
+        ul.innerHTML = '<li class="empty">No entries.</li>';
+        return;
+      }
+      items.forEach(e => {
+        const li = document.createElement("li");
+        const desc = document.createElement("span");
+        desc.className = "desc";
+        desc.textContent = e.description;
+        const amt = document.createElement("span");
+        amt.className = "amt " + (side === "R" ? "amt-in" : "amt-out");
+        amt.textContent = fmt(e.amount);
+        li.appendChild(desc);
+        li.appendChild(amt);
+        if (isToday) {
+          const actions = document.createElement("span");
+          actions.className = "row-actions";
+          const editBtn = document.createElement("button");
+          editBtn.textContent = "✎";
+          editBtn.onclick = () => editEntry(e, side);
+          const delBtn = document.createElement("button");
+          delBtn.textContent = "✕";
+          delBtn.onclick = () => deleteEntry(e.id, side);
+          actions.appendChild(editBtn);
+          actions.appendChild(delBtn);
+          li.appendChild(actions);
+        }
+        ul.appendChild(li);
+      });
+    }
+
+    async function addEntry(form) {
+      const side = form.dataset.side;
+      const fd = new FormData(form);
+      const body = {
+        side: side,
+        description: fd.get("description"),
+        amount: parseFloat(fd.get("amount")),
+      };
+      const res = await fetch("/api/entry", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) { const e = await res.json(); setStatus("Error: " + (e.detail || res.status)); return; }
+      form.reset();
+      setStatus("Added " + (side === "R" ? "Received" : "Paid") + " entry");
+      await loadSummary(currentDate);
+    }
+
+    async function editEntry(e, side) {
+      const desc = prompt("Description:", e.description);
+      if (desc === null) return;
+      const amt = prompt("Amount:", e.amount);
+      if (amt === null) return;
+      const res = await fetch("/api/entry/" + e.id, {
+        method: "PUT",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({description: desc, amount: parseFloat(amt)}),
+      });
+      if (!res.ok) { const er = await res.json(); setStatus("Error: " + (er.detail || res.status)); return; }
+      setStatus("Entry updated");
+      await loadSummary(currentDate);
+    }
+
+    async function deleteEntry(id, side) {
+      if (!confirm("Delete this entry?")) return;
+      const res = await fetch("/api/entry/" + id, {method: "DELETE"});
+      if (!res.ok) { const e = await res.json(); setStatus("Error: " + (e.detail || res.status)); return; }
+      setStatus("Entry deleted");
+      await loadSummary(currentDate);
+    }
+
+    document.querySelectorAll(".add-form").forEach(f => {
+      f.addEventListener("submit", (ev) => { ev.preventDefault(); addEntry(f); });
+    });
+
+    $("closingForm").addEventListener("submit", async (ev) => {
+      ev.preventDefault();
+      const v = parseFloat($("closingAmount").value);
+      if (isNaN(v)) return;
+      const res = await fetch("/api/closing", {
+        method: "POST",
+        headers: {"Content-Type": "application/json"},
+        body: JSON.stringify({amount: v}),
+      });
+      if (!res.ok) { const e = await res.json(); setStatus("Error: " + (e.detail || res.status)); return; }
+      setStatus("Closing saved");
+      await loadSummary(currentDate);
+    });
+
+    async function shiftDay(delta) {
+      const d = new Date(currentDate + "T00:00:00");
+      d.setDate(d.getDate() + delta);
+      if (d > new Date() && delta > 0) { setStatus("Cannot go past today"); return; }
+      await loadSummary(d.toISOString().slice(0, 10));
+    }
+    $("prevDay").onclick = () => shiftDay(-1);
+    $("nextDay").onclick = () => shiftDay(1);
+    $("todayBtn").onclick = async () => {
+      const t = await fetch("/api/health").then(r => r.json());
+      await loadSummary(t.today);
+    };
+    $("datePicker").onchange = (ev) => loadSummary(ev.target.value);
+
+    let auditVisible = false;
+    $("auditTable").style.display = "none";
+    $("toggleAudit").onclick = async () => {
+      auditVisible = !auditVisible;
+      $("auditTable").style.display = auditVisible ? "" : "none";
+      if (auditVisible) {
+        const rows = await fetch("/api/audit").then(r => r.json());
+        const tb = $("auditTable").querySelector("tbody");
+        tb.innerHTML = "";
+        rows.forEach(r => {
+          const tr = document.createElement("tr");
+          tr.innerHTML = `<td>${r.ts||""}</td><td>${r.action||""}</td><td>${r.ledger_date||""}</td><td>${r.side||""}</td><td>${(r.description||"").replace(/</g,"&lt;")}</td><td>${r.amount===null?"":r.amount}</td><td>${(r.old_description||"").replace(/</g,"&lt;")}</td><td>${r.old_amount===null?"":r.old_amount}</td>`;
+          tb.appendChild(tr);
+        });
+      }
+    };
+
+    // initial render from server data already in the page
+    loadSummary(currentDate);
+  </script>
+</body>
+</html>

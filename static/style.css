@@ -1,0 +1,365 @@
+/* Petty Cash Ledger — writable web view
+   Warm paper palette matching the Tkinter app (BG_PAPER / INK / INK_RED). */
+
+:root {
+  --bg-paper: #f5f0e8;
+  --bg-dark:  #ece5d3;
+  --ink:      #1a1008;
+  --ink-faded:#3d2b1a;
+  --ink-red:  #7a1a1a;
+  --ink-green:#1a5c1a;
+  --ink-blue: #2a4a7a;
+  --rule:     #7a6a50;
+  --box-bg:   #f9f5ec;
+  --box-clr:  #7a6a50;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: "Courier New", ui-monospace, monospace;
+  background: var(--bg-paper);
+  color: var(--ink);
+  line-height: 1.4;
+}
+
+.page { max-width: 960px; margin: 0 auto; padding: 14px; }
+
+/* ── Top bar ───────────────────────────────────────────────── */
+.topbar {
+  text-align: center;
+  border-bottom: 2px solid var(--rule);
+  padding-bottom: 10px;
+  margin-bottom: 14px;
+}
+.topbar h1 {
+  margin: 0;
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: var(--ink-red);
+  font-size: 22px;
+}
+.date-nav {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 4px;
+  flex-wrap: wrap;
+}
+.date-nav button, .date-nav input {
+  font-family: Georgia, serif;
+  font-size: 13px;
+  border: 1px solid var(--rule);
+  background: var(--bg-dark);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+.date-nav input { padding: 4px 6px; }
+.topbar .date { margin: 4px 0 0; font-size: 14px; color: var(--ink-faded); }
+.locknote { margin: 2px 0 0; font-size: 12px; color: var(--ink-red); font-weight: bold; min-height: 14px; }
+
+/* ── Totals grid ───────────────────────────────────────────── */
+.totals {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.card {
+  border: 1px solid var(--box-clr);
+  background: var(--box-bg);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card .label { font-size: 12px; font-family: Georgia, serif; color: var(--ink-faded); }
+.card .value { font-size: 17px; font-weight: bold; }
+.card-green .value { color: var(--ink-green); }
+.card-red   .value { color: var(--ink-red); }
+.card-blue  .value { color: var(--ink-blue); }
+.card-ink   .value { color: var(--ink); }
+
+/* ── Two columns: Received / Paid ──────────────────────────── */
+.columns { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.panel {
+  background: var(--box-bg);
+  border: 1px solid var(--box-clr);
+  border-radius: 8px;
+  padding: 12px;
+}
+.panel h2 {
+  margin: 0 0 8px;
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: var(--ink-red);
+  font-size: 16px;
+  border-bottom: 1px dashed var(--rule);
+  padding-bottom: 4px;
+}
+
+.entries { list-style: none; margin: 0; padding: 0; }
+.entries li {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dotted #cbbfa0;
+}
+.entries li:last-child { border-bottom: none; }
+.entries .desc { color: var(--ink-faded); word-break: break-word; flex: 1; }
+.entries .amt { white-space: nowrap; font-weight: bold; }
+.amt-in  { color: var(--ink-green); }
+.amt-out { color: var(--ink-red); }
+.row-actions { display: flex; gap: 4px; }
+.row-actions button {
+  border: 1px solid var(--rule);
+  background: var(--bg-dark);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 1px 6px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.entries .empty { color: #9a8b6e; font-style: italic; }
+
+.panel-total {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 2px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  font-weight: bold;
+}
+
+.add-form {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.add-form input {
+  font-family: "Courier New", monospace;
+  border: 1px solid var(--box-clr);
+  background: #fff;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+.add-form input[name="description"] { flex: 2 1 140px; min-width: 120px; }
+.add-form input[name="amount"] { flex: 1 1 70px; min-width: 70px; }
+.add-form button {
+  background: var(--ink-green);
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.add-form button:disabled, #closingForm button:disabled { background: #9a8b6e; cursor: not-allowed; }
+
+/* ── Closing row ───────────────────────────────────────────── */
+.closing-row {
+  margin-top: 16px;
+  background: var(--box-bg);
+  border: 1px solid var(--box-clr);
+  border-radius: 8px;
+  padding: 10px 12px;
+  display: flex;
+  align-items: center;
+}
+.closing-row form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.closing-row label { font-family: Georgia, serif; color: var(--ink-faded); }
+.closing-row input {
+  font-family: "Courier New", monospace;
+  border: 1px solid var(--box-clr);
+  background: #fff;
+  border-radius: 4px;
+  padding: 6px 8px;
+  width: 120px;
+}
+.closing-row button {
+  background: #5a3a00;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 14px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+/* ── Audit ─────────────────────────────────────────────────── */
+.audit { margin-top: 18px; }
+.audit h2 { font-family: Georgia, serif; color: var(--ink-red); font-size: 16px; margin: 0 0 6px; }
+.audit button {
+  border: 1px solid var(--rule);
+  background: var(--bg-dark);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+  margin-bottom: 8px;
+}
+#auditTable { width: 100%; border-collapse: collapse; font-size: 12px; }
+#auditTable th, #auditTable td {
+  border: 1px solid #cbbfa0;
+  padding: 4px 6px;
+  text-align: left;
+}
+#auditTable th { background: var(--bg-dark); }
+
+/* ── Footer ────────────────────────────────────────────────── */
+.status {
+  margin-top: 18px;
+  padding-top: 8px;
+  border-top: 1px solid var(--rule);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  color: var(--ink-faded);
+}
+.refresh {
+  color: var(--ink);
+  text-decoration: none;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 4px 10px;
+  background: var(--bg-dark);
+}
+
+/* ── Navbar ────────────────────────────────────────────────── */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--rule);
+  padding: 6px 10px;
+  margin-bottom: 10px;
+  background: var(--bg-dark);
+  border-radius: 8px;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.navbar .navbrand {
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: var(--ink-red);
+  text-decoration: none;
+  font-size: 16px;
+  font-weight: bold;
+}
+.navbar .navlinks { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.navbar .navlinks a { color: var(--ink); text-decoration: none; font-size: 13px; }
+.navbar .navlinks a:hover { text-decoration: underline; }
+.navbar .navuser { font-size: 12px; color: var(--ink-faded); }
+.navbar .logout {
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 2px 8px;
+  background: var(--bg-paper);
+}
+
+/* ── Login ─────────────────────────────────────────────────── */
+.login-card {
+  max-width: 380px;
+  margin: 60px auto;
+  text-align: center;
+  background: var(--box-bg);
+  border: 1px solid var(--box-clr);
+  border-radius: 10px;
+  padding: 28px 22px;
+}
+.login-card h1 {
+  font-family: Georgia, serif;
+  font-style: italic;
+  color: var(--ink-red);
+  margin: 0 0 8px;
+}
+.login-card .subtitle { color: var(--ink-faded); font-size: 14px; margin: 0 0 18px; }
+.google-btn {
+  display: inline-block;
+  background: #fff;
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  padding: 10px 18px;
+  text-decoration: none;
+  font-weight: bold;
+  font-family: Georgia, serif;
+}
+.google-btn:hover { background: var(--bg-dark); }
+.login-card .allowed { margin-top: 16px; font-size: 12px; color: var(--ink-faded); }
+
+/* ── Credit ledger ──────────────────────────────────────────── */
+.balances { margin-bottom: 16px; }
+.balances h2 { font-family: Georgia, serif; color: var(--ink-red); font-size: 16px; margin: 0 0 6px; }
+.bal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background: var(--box-bg);
+  border: 1px solid var(--box-clr);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.bal-table th, .bal-table td { border: 1px solid #cbbfa0; padding: 6px 8px; text-align: left; }
+.bal-table th { background: var(--bg-dark); }
+.bal-table .empty { color: #9a8b6e; font-style: italic; text-align: center; }
+.credit-panel .add-form select {
+  font-family: "Courier New", monospace;
+  border: 1px solid var(--box-clr);
+  background: #fff;
+  border-radius: 4px;
+  padding: 6px 8px;
+}
+
+/* ── Page toggle switch ─────────────────────────────────────── */
+.page-toggle {
+  display: inline-flex;
+  border: 1px solid var(--rule);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--bg-paper);
+}
+.page-toggle .toggle-opt {
+  padding: 4px 14px;
+  font-size: 13px;
+  text-decoration: none;
+  color: var(--ink-faded);
+  font-family: Georgia, serif;
+}
+.page-toggle .toggle-opt.active {
+  background: var(--ink-red);
+  color: #fff;
+}
+
+/* ── Udhaar list + sort bar ─────────────────────────────────── */
+.udhaar-panel { margin-top: 16px; }
+.sort-bar { display: flex; align-items: center; gap: 6px; margin: 8px 0; flex-wrap: wrap; }
+.sort-bar span { font-size: 12px; color: var(--ink-faded); font-family: Georgia, serif; }
+.sort-btn {
+  border: 1px solid var(--rule);
+  background: var(--bg-dark);
+  color: var(--ink);
+  border-radius: 4px;
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.sort-btn.active { background: var(--ink); color: #fff; }
+
+/* ── Responsive: phones ────────────────────────────────────── */
+@media (max-width: 640px) {
+  .totals { grid-template-columns: 1fr 1fr; }
+  .columns { grid-template-columns: 1fr; }
+  .card .value { font-size: 15px; }
+  .topbar h1 { font-size: 19px; }
+  #auditTable { font-size: 11px; }
+}

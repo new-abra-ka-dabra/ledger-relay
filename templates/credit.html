@@ -1,22 +1,156 @@
-{% extends "base.html" %}
-{% block title %}Credit{% endblock %}
-{% block content %}
-<h2>Credits</h2>
-<form method="post" action="/api/credit/entry">
-  <input name="party" placeholder="Party">
-  <input name="description" placeholder="Description">
-  <input name="amount" type="number" step="0.01" placeholder="Amount">
-  <select name="side">
-    <option value="G">Given</option>
-    <option value="R">Received</option>
-  </select>
-  <button type="submit">Add</button>
-</form>
-<ul>
-  {% for c in summary.entries %}
-    <li>{{ c.credit_date }} — {{ c.party }} — {{ c.side }}: {{ c.amount }}</li>
-  {% else %}
-    <li>No credits yet.</li>
-  {% endfor %}
-</ul>
-{% endblock %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Credit Ledger</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <main class="page">
+    <nav class="navbar">
+      <a href="/" class="navbrand">📒 Petty Cash Ledger</a>
+      <div class="navlinks">
+        <a href="/">Cashbook</a>
+        <a href="/credit">Credit</a>
+        <span class="navuser">{{ user.email if user else "" }}</span>
+        <a href="/logout" class="logout">Logout</a>
+      </div>
+    </nav>
+
+    <header class="topbar">
+      <h1>Credit Ledger</h1>
+      <div class="date-nav">
+        <button id="prevDay" title="Previous day">◀</button>
+        <button id="todayBtn">Today</button>
+        <button id="nextDay" title="Next day">▶</button>
+        <input type="date" id="datePicker" />
+      </div>
+      <p class="date" id="dateLabel">{{ summary.date }}</p>
+      <p class="locknote" id="lockNote"></p>
+    </header>
+
+    <section class="balances">
+      <h2>Party Balances (all-time)</h2>
+      <table class="bal-table">
+        <thead>
+          <tr><th>Party</th><th>Given</th><th>Received</th><th>Balance (owes us)</th></tr>
+        </thead>
+        <tbody id="balBody"></tbody>
+      </table>
+    </section>
+
+    <section class="panel credit-panel">
+      <h2>Today's Credit Entries</h2>
+      <ul class="entries" id="entryList"></ul>
+      <form class="add-form" id="creditForm">
+        <input type="text" id="party" placeholder="Party name" required list="partyList" />
+        <datalist id="partyList"></datalist>
+        <select id="side">
+          <option value="G">Given (udhaar)</option>
+          <option value="R">Received back</option>
+        </select>
+        <input type="text" id="description" placeholder="Description" />
+        <input type="number" id="amount" step="0.01" min="0" placeholder="₹" required />
+        <button type="submit">+ Add</button>
+      </form>
+    </section>
+
+    <footer class="status">
+      <span id="statusMsg">Ready</span>
+      <a class="refresh" href="/credit">↻ Refresh</a>
+    </footer>
+  </main>
+
+  <script>
+    let currentDate = "{{ summary.date }}";
+    let isToday = {{ "true" if summary.is_today else "false" }};
+    const $ = id => document.getElementById(id);
+    const fmt = n => "₹ " + Number(n).toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2});
+    const setStatus = m => $("statusMsg").textContent = m;
+    const esc = s => (s || "").replace(/</g, "&lt;");
+
+    async function loadSummary(d) {
+      const s = await fetch("/api/credit/summary?date=" + encodeURIComponent(d)).then(r => r.json());
+      currentDate = s.date; isToday = s.is_today;
+      $("dateLabel").textContent = s.date;
+      $("lockNote").textContent = isToday ? "" : "🔒 Past date — view only";
+      $("datePicker").value = s.date;
+
+      const bb = $("balBody"); bb.innerHTML = "";
+      s.balances.forEach(b => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td>${esc(b.party)}</td><td>${fmt(b.given)}</td><td>${fmt(b.received)}</td><td class="${b.balance >= 0 ? 'amt-in' : 'amt-out'}">${fmt(b.balance)}</td>`;
+        bb.appendChild(tr);
+      });
+      if (!s.balances.length) bb.innerHTML = '<tr><td colspan="4" class="empty">No parties yet.</td></tr>';
+
+      const dl = $("partyList"); dl.innerHTML = "";
+      s.balances.forEach(b => { const o = document.createElement("option"); o.value = b.party; dl.appendChild(o); });
+
+      const ul = $("entryList"); ul.innerHTML = "";
+      if (!s.entries.length) ul.innerHTML = '<li class="empty">No entries.</li>';
+      s.entries.forEach(e => {
+        const li = document.createElement("li");
+        const desc = document.createElement("span"); desc.className = "desc";
+        desc.textContent = `[${e.side === 'G' ? 'Given' : 'Received'}] ${e.party} — ${e.description || ''}`;
+        const amt = document.createElement("span"); amt.className = "amt " + (e.side === 'G' ? 'amt-out' : 'amt-in'); amt.textContent = fmt(e.amount);
+        li.appendChild(desc); li.appendChild(amt);
+        if (isToday) {
+          const a = document.createElement("span"); a.className = "row-actions";
+          const eb = document.createElement("button"); eb.textContent = "✎"; eb.onclick = () => editEntry(e);
+          const db = document.createElement("button"); db.textContent = "✕"; db.onclick = () => deleteEntry(e.id);
+          a.appendChild(eb); a.appendChild(db); li.appendChild(a);
+        }
+        ul.appendChild(li);
+      });
+
+      document.querySelectorAll("#creditForm button, #creditForm input, #creditForm select").forEach(el => el.disabled = !isToday);
+    }
+
+    $("creditForm").addEventListener("submit", async ev => {
+      ev.preventDefault();
+      const body = {
+        party: $("party").value.trim(),
+        side: $("side").value,
+        description: $("description").value.trim(),
+        amount: parseFloat($("amount").value),
+      };
+      if (!body.party) return;
+      const res = await fetch("/api/credit/entry", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(body)});
+      if (!res.ok) { const e = await res.json(); setStatus("Error: " + (e.detail || res.status)); return; }
+      $("description").value = ""; $("amount").value = ""; setStatus("Added credit entry");
+      await loadSummary(currentDate);
+    });
+
+    async function editEntry(e) {
+      const party = prompt("Party:", e.party); if (party === null) return;
+      const side = prompt("Side (G/R):", e.side); if (side === null) return;
+      const desc = prompt("Description:", e.description || ""); if (desc === null) return;
+      const amt = prompt("Amount:", e.amount); if (amt === null) return;
+      const res = await fetch("/api/credit/entry/" + e.id, {method:"PUT", headers:{"Content-Type":"application/json"}, body:JSON.stringify({party, side, description: desc, amount: parseFloat(amt)})});
+      if (!res.ok) { const er = await res.json(); setStatus("Error: " + (er.detail || res.status)); return; }
+      setStatus("Updated"); await loadSummary(currentDate);
+    }
+
+    async function deleteEntry(id) {
+      if (!confirm("Delete this credit entry?")) return;
+      const res = await fetch("/api/credit/entry/" + id, {method:"DELETE"});
+      if (!res.ok) { const e = await res.json(); setStatus("Error: " + (e.detail || res.status)); return; }
+      setStatus("Deleted"); await loadSummary(currentDate);
+    }
+
+    async function shiftDay(delta) {
+      const d = new Date(currentDate + "T00:00:00"); d.setDate(d.getDate() + delta);
+      if (d > new Date() && delta > 0) { setStatus("Cannot go past today"); return; }
+      await loadSummary(d.toISOString().slice(0, 10));
+    }
+    $("prevDay").onclick = () => shiftDay(-1);
+    $("nextDay").onclick = () => shiftDay(1);
+    $("todayBtn").onclick = async () => { const t = await fetch("/api/health").then(r => r.json()); await loadSummary(t.today); };
+    $("datePicker").onchange = ev => loadSummary(ev.target.value);
+
+    loadSummary(currentDate);
+  </script>
+</body>
+</html>

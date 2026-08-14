@@ -1,8 +1,0 @@
-fastapi
-uvicorn[standard]
-jinja2
-pydantic
-authlib
-python-dotenv
-itsdangerous
-httpx

@@ -2,17 +2,15 @@
 FastAPI web server for the Petty Cash Ledger — writable ledger + credit ledger
 + Google-auth login (email whitelist, 30-day session cookie).
 
-Run from inside the web_server/ folder:
+    Run from inside the web_server/ folder:
 
-    uvicorn main:app --host 0.0.0.0 --port 8000
+        uvicorn main:app --host 0.0.0.0 --port $PORT
 
-First-time setup: copy .env.example to .env and fill in Google OAuth
-credentials + allowed emails + a session secret.
+    Set DATABASE_URL and the Google OAuth variables in the hosting environment.
 """
 
 import os
 
-from dotenv import load_dotenv
 from fastapi import FastAPI, Request, HTTPException, Depends, Query
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -25,10 +23,10 @@ import database
 import credit
 from auth import router as auth_router, get_current_user
 
-load_dotenv()
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 SESSION_SECRET = os.getenv("SESSION_SECRET", "dev-secret-change-me")
+if SESSION_SECRET == "dev-secret-change-me" and os.getenv("PUBLIC_BASE_URL", "").startswith("https://"):
+    raise RuntimeError("SESSION_SECRET must be set for the hosted Render service.")
 
 app = FastAPI(title="Petty Cash Ledger")
 
@@ -38,13 +36,13 @@ app.add_middleware(
     secret_key=SESSION_SECRET,
     max_age=30 * 24 * 3600,   # 30 days
     same_site="lax",
-    https_only=False,         # local Wi-Fi = plain HTTP
+    https_only=os.getenv("PUBLIC_BASE_URL", "").startswith("https://"),
 )
 
 app.mount("/static", StaticFiles(directory=os.path.join(BASE_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(BASE_DIR, "templates"))
 
-# Create credit.db on first run (does not touch ledger.db)
+database.init_db()
 credit.init_db()
 
 # Auth routes (public): /login, /auth/login, /auth/callback, /logout
@@ -103,7 +101,12 @@ def _require_today(d: str):
 
 
 def _entry_date_side(eid: int):
-    return database.entry_date_side(eid)
+    con = database._connect_ro()
+    cur = con.cursor()
+    cur.execute("SELECT ledger_date, side FROM ledger WHERE id=?", (eid,))
+    row = cur.fetchone()
+    con.close()
+    return dict(row) if row else None
 
 
 # ── HTML pages (protected) ────────────────────────────────────────────────────
@@ -128,7 +131,7 @@ def credit_page(request: Request, date: str = Query(default=None)):
     )
 
 
-# ── Cashbook JSON API (protected) ───────────────────────────────────────────
+# ── Cashbook JSON API (protected) ────────────────────────────────────────────
 
 @app.get("/api/summary", dependencies=[Depends(get_current_user)])
 def api_summary(date: str = Query(default=None)):
