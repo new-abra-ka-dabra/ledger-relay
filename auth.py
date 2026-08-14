@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET", "")
 PUBLIC_BASE_URL = os.getenv(
-    "PUBLIC_BASE_URL", "https://ledger-relay.onrender.com"
+    "PUBLIC_BASE_URL", "https://cashbook.onrender.com"
 ).rstrip("/")
 OAUTH_REDIRECT_URI = os.getenv(
     "OAUTH_REDIRECT_URI", PUBLIC_BASE_URL + "/auth/callback"
