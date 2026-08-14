@@ -80,9 +80,8 @@ async def auth_login(request: Request):
 
 @router.get("/auth/callback")
 async def auth_callback(request: Request):
-    token = await oauth.google.authorize_access_token(
-        request, redirect_uri=OAUTH_REDIRECT_URI
-    )
+    token = await oauth.google.authorize_access_token(request)
+  
     user_info = token.get("userinfo")
     if not user_info:
         user_info = await oauth.google.userinfo(token)
