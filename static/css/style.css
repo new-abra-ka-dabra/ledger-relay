@@ -1,0 +1,6 @@
+body { font-family: Arial, sans-serif; margin: 20px; }
+nav a { margin-right: 8px; }
+.flashes li { list-style: none; padding: 6px; margin: 4px 0; border-radius: 4px; }
+.flashes .success { background: #d4edda; }
+.flashes .warning { background: #fff3cd; }
+.flashes .danger { background: #f8d7da; }
