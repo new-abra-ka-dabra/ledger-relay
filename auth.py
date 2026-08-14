@@ -10,7 +10,7 @@ Setup (one time) — set these environment variables in Render:
      https://console.cloud.google.com/apis/credentials
      (Application type: Web application)
    2. Add this Authorized redirect URI:
-        https://ledger-relay.onrender.com/auth/callback
+        https://cashbook.onrender.com/auth/callback
   3. Add the client id / secret to the Render environment
   4. Put the allowed Gmail addresses in ALLOWED_EMAILS
 """
